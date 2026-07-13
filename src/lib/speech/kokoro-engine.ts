@@ -16,7 +16,7 @@ type PreparedAudio = {
   promise: Promise<RawAudio>;
 };
 
-const KOKORO_VOICES: readonly KokoroVoiceDefinition[] = [
+const KOKORO_VOICES = [
   { id: 'af_heart',    name: 'Heart',    lang: 'en-US' },
   { id: 'af_bella',    name: 'Bella',    lang: 'en-US' },
   { id: 'af_nicole',   name: 'Nicole',   lang: 'en-US' },
@@ -45,7 +45,9 @@ const KOKORO_VOICES: readonly KokoroVoiceDefinition[] = [
   { id: 'bm_george',   name: 'George',   lang: 'en-GB' },
   { id: 'bm_daniel',   name: 'Daniel',   lang: 'en-GB' },
   { id: 'bm_lewis',    name: 'Lewis',    lang: 'en-GB' },
-] as const;
+] as const satisfies readonly KokoroVoiceDefinition[];
+
+type KokoroVoiceId = (typeof KOKORO_VOICES)[number]['id'];
 
 /**
  * Fully local Kokoro playback. Model weights and voice tensors are fetched
@@ -55,6 +57,10 @@ export class KokoroEngine implements SpeechEngine {
   readonly engineId = 'kokoro' as const;
 
   onWordBoundary?: (charIndex: number, charLength: number) => void;
+  onWordBoundarySchedule?: (
+    words: Array<{ charIndex: number; charLength: number }>,
+    durationMs: number,
+  ) => void;
   onModelStatus?: (status: 'loading' | 'ready') => void;
 
   private modelPromise: Promise<KokoroTTS> | null = null;
@@ -66,7 +72,7 @@ export class KokoroEngine implements SpeechEngine {
   private generation = 0;
   private currentRate = 1;
   private currentText = '';
-  private currentVoice: keyof KokoroTTS['voices'] = 'af_heart';
+  private currentVoice: KokoroVoiceId = 'af_heart';
   private currentVolume = 1;
   private currentCharIndex = 0;
   private currentPrefetchText = '';
@@ -179,7 +185,7 @@ export class KokoroEngine implements SpeechEngine {
 
   private async getAudio(
     text: string,
-    voice: keyof KokoroTTS['voices'],
+    voice: KokoroVoiceId,
     rate: number,
   ): Promise<RawAudio> {
     const key = audioKey(text, voice, rate);
@@ -196,7 +202,7 @@ export class KokoroEngine implements SpeechEngine {
 
   private prepareAudio(
     text: string,
-    voice: keyof KokoroTTS['voices'],
+    voice: KokoroVoiceId,
     rate: number,
   ): void {
     if (!text) return;
@@ -218,12 +224,8 @@ export class KokoroEngine implements SpeechEngine {
 
   private async getModel(): Promise<KokoroTTS> {
     if (!this.modelPromise) {
-      kokoroEnv.wasmPaths = chrome.runtime.getURL('dist/wasm/');
       this.onModelStatus?.('loading');
-      this.modelPromise = KokoroTTS.from_pretrained(MODEL_ID, {
-        dtype: 'q8',
-        device: 'wasm',
-      }).then(model => {
+      this.modelPromise = this.loadBestModel().then(model => {
         this.modelReady = true;
         this.onModelStatus?.('ready');
         return model;
@@ -236,6 +238,26 @@ export class KokoroEngine implements SpeechEngine {
       this.onModelStatus?.('loading');
     }
     return this.modelPromise;
+  }
+
+  private async loadBestModel(): Promise<KokoroTTS> {
+    // Both WebGPU and WASM use ONNX Runtime's local JSEP module.
+    kokoroEnv.wasmPaths = chrome.runtime.getURL('dist/wasm/');
+    if (await supportsFastWebGpu()) {
+      try {
+        return await KokoroTTS.from_pretrained(MODEL_ID, {
+          dtype: 'q4f16',
+          device: 'webgpu',
+        });
+      } catch (error) {
+        console.warn('Kokoro WebGPU initialization failed; using WASM.', error);
+      }
+    }
+
+    return KokoroTTS.from_pretrained(MODEL_ID, {
+      dtype: 'q8',
+      device: 'wasm',
+    });
   }
 
   private async playAudio(
@@ -261,7 +283,15 @@ export class KokoroEngine implements SpeechEngine {
     source.connect(gain);
     gain.connect(context.destination);
     this.source = source;
-    this.startBoundaryTimer(text, buffer.duration, context, baseOffset);
+    const schedule = collectWordBoundaries(text, baseOffset);
+    this.onWordBoundarySchedule?.(schedule, buffer.duration * 1000);
+    this.startBoundaryTimer(
+      text,
+      buffer.duration,
+      context,
+      baseOffset,
+      !this.onWordBoundarySchedule,
+    );
 
     return new Promise(resolve => {
       this.settlePlayback = resolve;
@@ -282,6 +312,7 @@ export class KokoroEngine implements SpeechEngine {
     durationSeconds: number,
     context: AudioContext,
     baseOffset: number,
+    emitBoundaries: boolean,
   ): void {
     this.clearBoundaryTimer();
     const words: Array<{ start: number; length: number }> = [];
@@ -302,7 +333,9 @@ export class KokoroEngine implements SpeechEngine {
       const word = words[index];
       if (word) {
         this.currentCharIndex = baseOffset + word.start;
-        this.onWordBoundary?.(baseOffset + word.start, word.length);
+        if (emitBoundaries) {
+          this.onWordBoundary?.(baseOffset + word.start, word.length);
+        }
       }
     };
     update();
@@ -322,12 +355,12 @@ export class KokoroEngine implements SpeechEngine {
     settle?.();
   }
 
-  private resolveVoice(voiceId?: string): keyof KokoroTTS['voices'] {
+  private resolveVoice(voiceId?: string): KokoroVoiceId {
     const requested = voiceId?.startsWith('kokoro:')
       ? voiceId.slice('kokoro:'.length)
       : 'af_heart';
     const voice = KOKORO_VOICES.find(candidate => candidate.id === requested);
-    return (voice?.id ?? 'af_heart') as keyof KokoroTTS['voices'];
+    return voice?.id ?? 'af_heart';
   }
 }
 
@@ -337,8 +370,42 @@ function clamp(value: number, min: number, max: number): number {
 
 function audioKey(
   text: string,
-  voice: keyof KokoroTTS['voices'],
+  voice: KokoroVoiceId,
   rate: number,
 ): string {
   return `${voice}\u0000${rate}\u0000${text}`;
+}
+
+function collectWordBoundaries(
+  text: string,
+  baseOffset: number,
+): Array<{ charIndex: number; charLength: number }> {
+  const words: Array<{ charIndex: number; charLength: number }> = [];
+  const regex = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    words.push({
+      charIndex: baseOffset + match.index,
+      charLength: match[0].length,
+    });
+  }
+  return words;
+}
+
+type WebGpuNavigator = Navigator & {
+  gpu?: {
+    requestAdapter(options?: { powerPreference?: 'low-power' | 'high-performance' }):
+      Promise<{ features: ReadonlySet<string> } | null>;
+  };
+};
+
+async function supportsFastWebGpu(): Promise<boolean> {
+  try {
+    const adapter = await (navigator as WebGpuNavigator).gpu?.requestAdapter({
+      powerPreference: 'high-performance',
+    });
+    return adapter?.features.has('shader-f16') ?? false;
+  } catch {
+    return false;
+  }
 }

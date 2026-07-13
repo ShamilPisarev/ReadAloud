@@ -261,6 +261,13 @@ body.extension-disabled .card {
 }
 .select:focus { border-color: var(--color-primary); }
 
+.settings-note {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* ── Sliders ────────────────────────────────────────────────────────────── */
 .sliders { display: flex; flex-direction: column; gap: 6px; }
 

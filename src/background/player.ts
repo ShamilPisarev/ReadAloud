@@ -347,6 +347,21 @@ export class Player {
     this.sendHighlightWord(this.session.tabId, charIndex, charLength).catch(() => undefined);
   }
 
+  onWordBoundarySchedule(
+    words: Array<{ charIndex: number; charLength: number }>,
+    durationMs: number,
+    engine: EngineId,
+  ): void {
+    if (!this.session || this.status !== 'playing') return;
+    if (engine !== this.activeEngine) return;
+    const message: ContentScriptMessage = {
+      type: 'HIGHLIGHT_WORD_SCHEDULE',
+      words,
+      durationMs,
+    };
+    chrome.tabs.sendMessage(this.session.tabId, message).catch(() => undefined);
+  }
+
   onEngineStatus(engine: EngineId, status: 'loading' | 'ready'): void {
     if (!this.session || engine !== this.activeEngine) return;
     if (status === 'loading' && this.status === 'playing') {

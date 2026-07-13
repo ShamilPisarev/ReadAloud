@@ -31,6 +31,12 @@ export interface HighlightWordMessage {
   charLength: number;
 }
 
+export interface HighlightWordScheduleMessage {
+  type: 'HIGHLIGHT_WORD_SCHEDULE';
+  words: Array<{ charIndex: number; charLength: number }>;
+  durationMs: number;
+}
+
 /** Tell the content script to clear all highlights. */
 export interface ClearHighlightMessage {
   type: 'CLEAR_HIGHLIGHT';
@@ -47,6 +53,7 @@ export type ContentScriptMessage =
   | ExtractTextMessage
   | HighlightChunkMessage
   | HighlightWordMessage
+  | HighlightWordScheduleMessage
   | PopupVisibilityMessage
   | ClearHighlightMessage;
 
@@ -205,6 +212,13 @@ export interface WordBoundaryMessage {
   engine?: EngineId;
 }
 
+export interface WordBoundaryScheduleMessage {
+  type: 'WORD_BOUNDARY_SCHEDULE';
+  words: Array<{ charIndex: number; charLength: number }>;
+  durationMs: number;
+  engine: EngineId;
+}
+
 export interface EngineStatusMessage {
   type: 'ENGINE_STATUS';
   engine: EngineId;
@@ -220,6 +234,7 @@ export type OffscreenToBackground =
   | ChunkDoneMessage
   | GetVoicesMessage
   | WordBoundaryMessage
+  | WordBoundaryScheduleMessage
   | EngineStatusMessage;
 
 // ---------------------------------------------------------------------------

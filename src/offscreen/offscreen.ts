@@ -13,7 +13,11 @@ import { SpeechSynthesisEngine }      from '../lib/speech/speech-synthesis-engin
 import { KokoroEngine }               from '../lib/speech/kokoro-engine';
 import type { EngineId, SpeechEngine, Voice } from '../lib/speech/types';
 import type { OffscreenMessage }       from '../lib/messages';
-import type { ChunkDoneMessage, WordBoundaryMessage } from '../lib/messages';
+import type {
+  ChunkDoneMessage,
+  WordBoundaryMessage,
+  WordBoundaryScheduleMessage,
+} from '../lib/messages';
 
 // ---------------------------------------------------------------------------
 // Engine instance — lives for the lifetime of the document
@@ -44,6 +48,16 @@ kokoroEngine.onModelStatus = status => {
     engine: 'kokoro',
     status,
   }).catch(() => undefined);
+};
+kokoroEngine.onWordBoundarySchedule = (words, durationMs) => {
+  if (activeEngine !== kokoroEngine) return;
+  const message: WordBoundaryScheduleMessage = {
+    type: 'WORD_BOUNDARY_SCHEDULE',
+    words,
+    durationMs,
+    engine: 'kokoro',
+  };
+  chrome.runtime.sendMessage(message).catch(() => undefined);
 };
 
 // ---------------------------------------------------------------------------

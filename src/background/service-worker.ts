@@ -257,6 +257,15 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    if (msg.type === 'WORD_BOUNDARY_SCHEDULE') {
+      player.onWordBoundarySchedule(
+        msg.words,
+        msg.durationMs,
+        msg.engine,
+      );
+      return false;
+    }
+
     if (msg.type === 'ENGINE_STATUS') {
       player.onEngineStatus(msg.engine, msg.status);
       sendResponse({ ok: true });

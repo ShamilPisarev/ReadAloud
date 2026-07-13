@@ -27,6 +27,7 @@ const progressFill   = $<HTMLDivElement>('progress-fill');
 const progressBar    = $<HTMLDivElement>('progress-bar');
 const progressLabel  = $<HTMLSpanElement>('progress-label');
 const voiceSelect    = $<HTMLSelectElement>('voice-select');
+const kokoroSpeedNote = $<HTMLParagraphElement>('kokoro-speed-note');
 const rangeRate      = $<HTMLInputElement>('range-rate');
 const rangePitch     = $<HTMLInputElement>('range-pitch');
 const rangeVolume    = $<HTMLInputElement>('range-volume');
@@ -211,6 +212,7 @@ function wireEvents(): void {
   voiceSelect.addEventListener('change', () => {
     const voiceId = voiceSelect.value;
     persistSetting({ voiceId });
+    updateKokoroSpeedNote();
     chrome.runtime.sendMessage({ type: 'SET_VOICE', voiceId }).catch(() => undefined);
   });
 
@@ -219,6 +221,7 @@ function wireEvents(): void {
     const v = parseFloat(rangeRate.value);
     valRate.textContent = `${v.toFixed(2)}×`;
     persistSetting({ rate: v });
+    updateKokoroSpeedNote();
     // Apply immediately — tells the offscreen to restart at the new speed
     // without waiting for the next chunk or for the debounce to flush.
     chrome.runtime.sendMessage({ type: 'SET_RATE', rate: v }).catch(() => undefined);
@@ -305,7 +308,15 @@ function applySettingsToUI(s: ReadAloudSettings): void {
   valPitch.textContent    = `${s.pitch.toFixed(2)}×`;
   valVolume.textContent   = `${Math.round(s.volume * 100)}%`;
   chkScroll.checked       = s.autoScroll;
+  updateKokoroSpeedNote();
   setActiveSource(s.source);
+}
+
+function updateKokoroSpeedNote(): void {
+  kokoroSpeedNote.classList.toggle(
+    'hidden',
+    !voiceSelect.value.startsWith('kokoro:'),
+  );
 }
 
 function setActiveSource(source: ExtractionSource): void {
@@ -388,6 +399,7 @@ function populateVoices(
     if (Array.from(voiceSelect.options).some(o => o.value === selectedId)) {
       voiceSelect.value = selectedId;
     }
+    updateKokoroSpeedNote();
     return;
   }
   voiceSelect.dataset['voiceIds'] = newIds;
@@ -458,6 +470,7 @@ function populateVoices(
       persistSetting({ voiceId: match.id });
     }
   }
+  updateKokoroSpeedNote();
 }
 
 // ---------------------------------------------------------------------------

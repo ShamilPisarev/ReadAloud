@@ -49,6 +49,7 @@ let toolbar: ReadingToolbar | null = null;
 let toolbarInitPromise: Promise<void> | null = null;
 let dblClickAttached = false;
 let lastManualScrollAt = 0;
+let wordScheduleTimer: number | null = null;
 
 const MANUAL_SCROLL_SUPPRESS_MS = 8_000;
 
@@ -90,6 +91,7 @@ chrome.runtime.onMessage.addListener(
         // Immediately tear down all interaction
         popupVisible = false;
         highlighter.clear();
+        clearWordSchedule();
         if (dblClickAttached) {
           document.removeEventListener('dblclick', handleDoubleClick, true);
           dblClickAttached = false;
@@ -108,15 +110,22 @@ chrome.runtime.onMessage.addListener(
         return true; // keep the channel open for the async response
 
       case 'HIGHLIGHT_CHUNK':
+        clearWordSchedule();
         handleHighlight(csMsg.chunkIndex, csMsg.scroll, sendResponse);
         return false; // synchronous response
 
       case 'HIGHLIGHT_WORD':
+        clearWordSchedule();
         try {
           highlighter.highlightWord(csMsg.charIndex, csMsg.charLength);
         } catch {
           // Highlighting should never be allowed to interrupt playback.
         }
+        sendResponse({ ok: true, source: 'article', text: '', chunks: [] });
+        return false;
+
+      case 'HIGHLIGHT_WORD_SCHEDULE':
+        startWordSchedule(csMsg.words, csMsg.durationMs);
         sendResponse({ ok: true, source: 'article', text: '', chunks: [] });
         return false;
 
@@ -127,11 +136,54 @@ chrome.runtime.onMessage.addListener(
         return false;
 
       case 'CLEAR_HIGHLIGHT':
+        clearWordSchedule();
         highlighter.clear();
         return false;
     }
   },
 );
+
+function startWordSchedule(
+  words: Array<{ charIndex: number; charLength: number }>,
+  durationMs: number,
+): void {
+  clearWordSchedule();
+  if (words.length === 0 || durationMs <= 0) return;
+
+  let elapsedMs = 0;
+  let lastTickAt = performance.now();
+  let lastIndex = -1;
+  const tick = (): void => {
+    const now = performance.now();
+    if (playerState.status === 'playing') elapsedMs += now - lastTickAt;
+    lastTickAt = now;
+
+    const progress = Math.min(0.999, elapsedMs / durationMs);
+    const index = Math.min(words.length - 1, Math.floor(progress * words.length));
+    if (index !== lastIndex) {
+      lastIndex = index;
+      const word = words[index];
+      if (word) {
+        try {
+          highlighter.highlightWord(word.charIndex, word.charLength);
+        } catch {
+          // Page mutations must not interrupt playback or the schedule.
+        }
+      }
+    }
+
+    if (elapsedMs >= durationMs) clearWordSchedule();
+  };
+
+  tick();
+  wordScheduleTimer = window.setInterval(tick, 50);
+}
+
+function clearWordSchedule(): void {
+  if (wordScheduleTimer === null) return;
+  window.clearInterval(wordScheduleTimer);
+  wordScheduleTimer = null;
+}
 
 async function initContentUi(): Promise<void> {
   // Load the enabled state from storage
