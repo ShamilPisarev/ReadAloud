@@ -481,6 +481,9 @@ export class Player {
     const msg: OffscreenMessage = {
       type:    'SPEAK_CHUNK',
       text:    chunk.text,
+      prefetchText: voiceId?.startsWith('kokoro:')
+        ? chunks[chunkIndex + 1]?.text
+        : undefined,
       voiceId: voiceId ?? undefined,
       rate:    settings.rate,
       pitch:   settings.pitch,

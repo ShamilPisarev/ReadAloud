@@ -80,6 +80,8 @@ export type ContentScriptResponse = ExtractTextResponse | ErrorResponse;
 export interface SpeakChunkMessage {
   type: 'SPEAK_CHUNK';
   text: string;
+  /** Next chunk, used by local engines to hide synthesis time during playback. */
+  prefetchText?: string;
   voiceId?: string;
   rate?: number;
   pitch?: number;

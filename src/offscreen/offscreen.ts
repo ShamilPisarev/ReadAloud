@@ -66,6 +66,7 @@ chrome.runtime.onMessage.addListener(
         activeEngine
           .speak(msg.text, {
             voiceId: msg.voiceId,
+            prefetchText: msg.prefetchText,
             rate:    msg.rate,
             pitch:   msg.pitch,
             volume:  msg.volume,

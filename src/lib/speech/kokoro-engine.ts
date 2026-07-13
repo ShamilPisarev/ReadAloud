@@ -11,6 +11,11 @@ type KokoroVoiceDefinition = {
   lang: 'en-US' | 'en-GB';
 };
 
+type PreparedAudio = {
+  key: string;
+  promise: Promise<RawAudio>;
+};
+
 const KOKORO_VOICES: readonly KokoroVoiceDefinition[] = [
   { id: 'af_heart',    name: 'Heart',    lang: 'en-US' },
   { id: 'af_bella',    name: 'Bella',    lang: 'en-US' },
@@ -64,6 +69,8 @@ export class KokoroEngine implements SpeechEngine {
   private currentVoice: keyof KokoroTTS['voices'] = 'af_heart';
   private currentVolume = 1;
   private currentCharIndex = 0;
+  private currentPrefetchText = '';
+  private preparedAudio: PreparedAudio | null = null;
 
   getVoices(): Promise<Voice[]> {
     const voices: UnscoredVoice[] = KOKORO_VOICES.map(voice => ({
@@ -77,13 +84,16 @@ export class KokoroEngine implements SpeechEngine {
   }
 
   async speak(text: string, options: SpeakOptions = {}): Promise<void> {
-    this.stop();
-    const generation = ++this.generation;
+    // Preserve a matching look-ahead render when moving to the next chunk.
+    ++this.generation;
+    this.stopAudioOnly();
+    const generation = this.generation;
     this.currentText = text;
     this.currentVoice = this.resolveVoice(options.voiceId);
     this.currentRate = clamp(options.rate ?? 1, 0.5, 4);
     this.currentVolume = clamp(options.volume ?? 1, 0, 1);
     this.currentCharIndex = 0;
+    this.currentPrefetchText = options.prefetchText ?? '';
 
     await this.generateAndPlay(text, 0, generation);
   }
@@ -97,6 +107,7 @@ export class KokoroEngine implements SpeechEngine {
   async setRate(rate: number): Promise<void> {
     const nextRate = clamp(rate, 0.5, 4);
     this.currentRate = nextRate;
+    this.preparedAudio = null;
     if (!this.currentText) return;
 
     let restartAt = this.currentCharIndex;
@@ -122,6 +133,8 @@ export class KokoroEngine implements SpeechEngine {
     this.stopAudioOnly();
     this.currentText = '';
     this.currentCharIndex = 0;
+    this.currentPrefetchText = '';
+    this.preparedAudio = null;
   }
 
   private stopAudioOnly(): void {
@@ -144,13 +157,7 @@ export class KokoroEngine implements SpeechEngine {
     baseOffset: number,
     generation: number,
   ): Promise<void> {
-    const model = await this.getModel();
-    if (generation !== this.generation) return;
-
-    const audio = await model.generate(text, {
-      voice: this.currentVoice,
-      speed: this.currentRate,
-    });
+    const audio = await this.getAudio(text, this.currentVoice, this.currentRate);
     if (generation !== this.generation) return;
 
     await this.playAudio(
@@ -159,7 +166,54 @@ export class KokoroEngine implements SpeechEngine {
       this.currentVolume,
       generation,
       baseOffset,
+      () => {
+        if (generation !== this.generation) return;
+        this.prepareAudio(
+          this.currentPrefetchText,
+          this.currentVoice,
+          this.currentRate,
+        );
+      },
     );
+  }
+
+  private async getAudio(
+    text: string,
+    voice: keyof KokoroTTS['voices'],
+    rate: number,
+  ): Promise<RawAudio> {
+    const key = audioKey(text, voice, rate);
+    if (this.preparedAudio?.key === key) {
+      const prepared = this.preparedAudio;
+      this.preparedAudio = null;
+      return prepared.promise;
+    }
+
+    this.preparedAudio = null;
+    const model = await this.getModel();
+    return model.generate(text, { voice, speed: rate });
+  }
+
+  private prepareAudio(
+    text: string,
+    voice: keyof KokoroTTS['voices'],
+    rate: number,
+  ): void {
+    if (!text) return;
+    const key = audioKey(text, voice, rate);
+    if (this.preparedAudio?.key === key) return;
+
+    const prepared: PreparedAudio = {
+      key,
+      promise: this.getModel().then(model => model.generate(text, {
+        voice,
+        speed: rate,
+      })),
+    };
+    this.preparedAudio = prepared;
+    prepared.promise.catch(() => {
+      if (this.preparedAudio === prepared) this.preparedAudio = null;
+    });
   }
 
   private async getModel(): Promise<KokoroTTS> {
@@ -190,6 +244,7 @@ export class KokoroEngine implements SpeechEngine {
     volume: number,
     generation: number,
     baseOffset: number,
+    onStarted?: () => void,
   ): Promise<void> {
     const context = this.audioContext ?? new AudioContext();
     this.audioContext = context;
@@ -218,6 +273,7 @@ export class KokoroEngine implements SpeechEngine {
         this.finishPlayback();
       };
       source.start();
+      onStarted?.();
     });
   }
 
@@ -277,4 +333,12 @@ export class KokoroEngine implements SpeechEngine {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function audioKey(
+  text: string,
+  voice: keyof KokoroTTS['voices'],
+  rate: number,
+): string {
+  return `${voice}\u0000${rate}\u0000${text}`;
 }

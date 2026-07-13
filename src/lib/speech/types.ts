@@ -38,6 +38,8 @@ export interface SpeakOptions {
   volume?: number;
   /** BCP-47 language hint used for automatic voice selection. */
   lang?: string;
+  /** Optional look-ahead text that a local engine may synthesize in advance. */
+  prefetchText?: string;
 }
 
 /** Common contract implemented by every speech engine. */
