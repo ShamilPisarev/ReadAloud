@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Read Aloud</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+
+    <!-- ── Header ───────────────────────────────────────────────── -->
+    <header class="app-header">
+      <span class="app-title">Read Aloud</span>
+      <label class="toggle-switch" title="Turn Read Aloud on or off">
+        <input id="chk-enabled" type="checkbox" aria-label="Turn Read Aloud on or off" />
+        <span class="toggle-slider" aria-hidden="true"></span>
+      </label>
+      <span id="status-badge" class="badge badge--idle" aria-live="polite">Ready</span>
+    </header>
+
+    <!-- ── Source selector ──────────────────────────────────────── -->
+    <section class="card" aria-label="Text source">
+      <span id="source-label" class="field-label">Read from</span>
+      <div class="segmented" role="group" aria-labelledby="source-label">
+        <button class="seg-btn seg-btn--active" data-source="selection" type="button" aria-pressed="true">Selection</button>
+        <button class="seg-btn"                  data-source="article"   type="button" aria-pressed="false">Main content</button>
+        <button class="seg-btn"                  data-source="fallback"  type="button" aria-pressed="false">Full page</button>
+      </div>
+
+      <!-- Paste textarea — only visible when source === 'fallback' is not wanted;
+           repurposed as explicit "paste" mode via a dedicated button in the segmented group -->
+      <textarea
+        id="paste-text"
+        class="paste-area hidden"
+        placeholder="Paste text here, or leave this blank to read the full page…"
+        rows="4"
+        spellcheck="false"
+        aria-label="Text to read aloud"
+      ></textarea>
+    </section>
+
+    <!-- ── Transport controls ───────────────────────────────────── -->
+    <section class="card transport" aria-label="Playback controls">
+      <button id="btn-play"   class="icon-btn icon-btn--primary" title="Play"   aria-label="Play"   type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,3 19,12 5,21"/></svg>
+      </button>
+      <button id="btn-pause"  class="icon-btn" title="Pause"  aria-label="Pause"  type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button id="btn-resume" class="icon-btn hidden" title="Resume" aria-label="Resume" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,3 19,12 5,21"/></svg>
+      </button>
+      <button id="btn-stop"   class="icon-btn" title="Stop"   aria-label="Stop"   type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/></svg>
+      </button>
+
+      <!-- Progress -->
+      <div class="progress-wrap" aria-live="polite" aria-atomic="true">
+        <div id="progress-bar" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <span id="progress-label" class="progress-label">—</span>
+      </div>
+    </section>
+
+    <!-- ── Voice & settings ─────────────────────────────────────── -->
+    <section class="card" aria-label="Voice settings">
+      <label class="field-label" for="voice-select">Voice</label>
+      <select id="voice-select" class="select">
+        <option value="">Automatic (recommended)</option>
+      </select>
+
+      <div class="sliders">
+        <label class="slider-row">
+          <span class="slider-label">Speed</span>
+          <input id="range-rate"   class="range" type="range" min="0.5" max="4" step="0.05" value="1" />
+          <span id="val-rate"  class="range-val">1.0×</span>
+        </label>
+
+        <label class="slider-row">
+          <span class="slider-label">Pitch</span>
+          <input id="range-pitch"  class="range" type="range" min="0.5" max="2" step="0.05" value="1" />
+          <span id="val-pitch" class="range-val">1.0×</span>
+        </label>
+
+        <label class="slider-row">
+          <span class="slider-label">Volume</span>
+          <input id="range-volume" class="range" type="range" min="0"   max="1" step="0.05" value="1" />
+          <span id="val-volume" class="range-val">100%</span>
+        </label>
+      </div>
+
+      <label class="checkbox-row">
+        <input id="chk-scroll" type="checkbox" checked />
+        <span>Follow along as text is read</span>
+      </label>
+    </section>
+
+    <!-- ── Error banner ─────────────────────────────────────────── -->
+    <div id="error-banner" class="error-banner hidden" role="alert" aria-live="assertive"></div>
+
+    <script type="module" src="../../dist/popup/popup.js"></script>
+  </body>
+</html>

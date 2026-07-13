@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "Read Aloud",
+  "version": "0.1.0",
+  "description": "Listen to selected text, articles, or full webpages with adjustable voices and playback controls.",
+
+  "permissions": [
+    "storage",
+    "offscreen",
+    "activeTab",
+    "scripting",
+    "contextMenus",
+    "tts",
+    "unlimitedStorage"
+  ],
+
+  "host_permissions": [
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*",
+    "https://*.hf.co/*"
+  ],
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+
+  "background": {
+    "service_worker": "dist/background/service-worker.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Read Aloud",
+    "default_icon": {
+      "16": "public/icons/icon16.png",
+      "48": "public/icons/icon48.png",
+      "128": "public/icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "public/icons/icon16.png",
+    "48": "public/icons/icon48.png",
+    "128": "public/icons/icon128.png"
+  },
+
+  "commands": {
+    "read-selection": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Read the selected text aloud"
+    },
+    "read-page": {
+      "suggested_key": { "default": "Alt+Shift+R" },
+      "description": "Read the current page aloud"
+    },
+    "stop-reading": {
+      "suggested_key": { "default": "Alt+Shift+X" },
+      "description": "Stop reading aloud"
+    }
+  }
+}
