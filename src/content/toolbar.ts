@@ -3,6 +3,8 @@ import type { PlayerStatePayload } from '../lib/messages';
 
 const TOOLBAR_ID = 'read-aloud-toolbar-root';
 const STYLE_ID   = 'read-aloud-toolbar-style';
+const BROWSER_MAX_RATE = 4;
+const KOKORO_MAX_RATE = 2;
 
 const TOOLBAR_CSS = `
 #${TOOLBAR_ID} {
@@ -276,9 +278,16 @@ export class ReadingToolbar {
   }
 
   applySettings(settings: ReadAloudSettings): void {
-    this.settings = settings;
-    this.rateInput.value = String(settings.rate);
-    this.rateValue.textContent = `${settings.rate.toFixed(2)}x`;
+    const rate = settings.voiceId.startsWith('kokoro:')
+      ? Math.min(settings.rate, KOKORO_MAX_RATE)
+      : settings.rate;
+    this.settings = { ...settings, rate };
+    this.rateInput.max = String(
+      settings.voiceId.startsWith('kokoro:') ? KOKORO_MAX_RATE : BROWSER_MAX_RATE,
+    );
+    this.rateInput.value = String(rate);
+    this.rateValue.textContent = `${rate.toFixed(2)}x`;
+    if (rate !== settings.rate) void saveSettings({ rate });
     this.populateVoices(this.state.voices, settings.voiceId);
     this.render();
   }
@@ -353,10 +362,19 @@ export class ReadingToolbar {
     });
     this.voiceSelect.addEventListener('change', () => {
       const voiceId = this.voiceSelect.value;
-      void saveSettings({ voiceId });
+      const maxRate = voiceId.startsWith('kokoro:')
+        ? KOKORO_MAX_RATE
+        : BROWSER_MAX_RATE;
+      const currentRate = parseFloat(this.rateInput.value);
+      const rate = Math.min(currentRate, maxRate);
+      this.rateInput.max = String(maxRate);
+      this.rateInput.value = String(rate);
+      this.rateValue.textContent = `${rate.toFixed(2)}x`;
+      void saveSettings({ voiceId, rate });
       if (this.settings) {
-        this.settings = { ...this.settings, voiceId };
+        this.settings = { ...this.settings, voiceId, rate };
       }
+      if (rate !== currentRate) this.callbacks.onRate(rate);
       this.callbacks.onVoice(voiceId);
     });
   }
@@ -386,7 +404,7 @@ export class ReadingToolbar {
     } else if (this.state.voices.length === 0) {
       this.hint.textContent = 'Voices will appear here when your browser makes them available.';
     } else if (this.settings?.voiceId.startsWith('kokoro:')) {
-      this.hint.textContent = 'Kokoro runs locally. The first playback downloads and caches the model.';
+      this.hint.textContent = 'Kokoro runs locally. Use 1x–1.5x for the most natural voice (maximum 2x).';
     } else {
       this.hint.textContent = 'Double-click any text to continue reading from that point.';
     }

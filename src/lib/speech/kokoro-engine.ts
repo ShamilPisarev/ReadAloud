@@ -4,6 +4,7 @@ import type { SpeakOptions, SpeechEngine, Voice } from './types';
 import { rankVoices, type UnscoredVoice } from './voice-ranking';
 
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+const KOKORO_MAX_RATE = 2;
 
 type KokoroVoiceDefinition = {
   id: string;
@@ -96,7 +97,7 @@ export class KokoroEngine implements SpeechEngine {
     const generation = this.generation;
     this.currentText = text;
     this.currentVoice = this.resolveVoice(options.voiceId);
-    this.currentRate = clamp(options.rate ?? 1, 0.5, 4);
+    this.currentRate = clamp(options.rate ?? 1, 0.5, KOKORO_MAX_RATE);
     this.currentVolume = clamp(options.volume ?? 1, 0, 1);
     this.currentCharIndex = 0;
     this.currentPrefetchText = options.prefetchText ?? '';
@@ -111,7 +112,7 @@ export class KokoroEngine implements SpeechEngine {
 
   /** Regenerate the unread text at the new speed so the voice keeps its pitch. */
   async setRate(rate: number): Promise<void> {
-    const nextRate = clamp(rate, 0.5, 4);
+    const nextRate = clamp(rate, 0.5, KOKORO_MAX_RATE);
     this.currentRate = nextRate;
     this.preparedAudio = null;
     if (!this.currentText) return;
@@ -246,7 +247,9 @@ export class KokoroEngine implements SpeechEngine {
     if (await supportsFastWebGpu()) {
       try {
         return await KokoroTTS.from_pretrained(MODEL_ID, {
-          dtype: 'q4f16',
+          // kokoro-js recommends FP32 for WebGPU. Q4/F16 is faster to load,
+          // but can produce corrupted, metallic audio on some integrated GPUs.
+          dtype: 'fp32',
           device: 'webgpu',
         });
       } catch (error) {

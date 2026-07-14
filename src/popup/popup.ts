@@ -8,6 +8,9 @@ import type {
 } from '../lib/messages';
 import type { ExtractionSource }            from '../lib/text/types';
 
+const BROWSER_MAX_RATE = 4;
+const KOKORO_MAX_RATE = 2;
+
 // ---------------------------------------------------------------------------
 // DOM refs — typed helpers to avoid repetitive casts
 // ---------------------------------------------------------------------------
@@ -313,10 +316,19 @@ function applySettingsToUI(s: ReadAloudSettings): void {
 }
 
 function updateKokoroSpeedNote(): void {
-  kokoroSpeedNote.classList.toggle(
-    'hidden',
-    !voiceSelect.value.startsWith('kokoro:'),
-  );
+  const isKokoro = voiceSelect.value.startsWith('kokoro:');
+  kokoroSpeedNote.classList.toggle('hidden', !isKokoro);
+  rangeRate.max = String(isKokoro ? KOKORO_MAX_RATE : BROWSER_MAX_RATE);
+
+  if (isKokoro && parseFloat(rangeRate.value) > KOKORO_MAX_RATE) {
+    rangeRate.value = String(KOKORO_MAX_RATE);
+    valRate.textContent = `${KOKORO_MAX_RATE.toFixed(2)}×`;
+    persistSetting({ rate: KOKORO_MAX_RATE });
+    chrome.runtime.sendMessage({
+      type: 'SET_RATE',
+      rate: KOKORO_MAX_RATE,
+    }).catch(() => undefined);
+  }
 }
 
 function setActiveSource(source: ExtractionSource): void {
