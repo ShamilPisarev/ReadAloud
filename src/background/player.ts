@@ -66,6 +66,9 @@ export class Player {
   private playbackGeneration = 0;
   private restartOnResume = false;
   private offscreenReady = false;
+  /** Kokoro model is (being) loaded in the current offscreen document. */
+  private kokoroWarm = false;
+  private modelProgress: number | null = null;
   private chunkRetryCount = 0;
   private onStateChange: StateChangeCallback;
 
@@ -91,6 +94,7 @@ export class Player {
       chunkIndex:  this.session?.chunkIndex  ?? 0,
       totalChunks: this.session?.totalChunks ?? 0,
       errorMessage: this.errorMessage,
+      modelProgress: this.modelProgress,
       voices: this.cachedVoices.map(v => ({
         id:    v.id,
         name:  v.name,
@@ -223,7 +227,9 @@ export class Player {
         await this.preloadVoice(voiceId).catch(() => undefined);
       } else if (this.activeEngine === 'kokoro') {
         this.activeEngine = 'speech-synthesis';
-        await this.closeOffscreen();
+        // Keep the offscreen document alive when a Kokoro model is warm in
+        // it — closing would force a full model re-init on the next switch.
+        if (!this.kokoroWarm) await this.closeOffscreen();
       }
       return;
     }
@@ -258,7 +264,7 @@ export class Player {
     if (this.offscreenReady) {
       await this.sendToOffscreen({ type: 'STOP' });
     }
-    if (!keepOffscreenOpen && this.activeEngine !== 'kokoro') {
+    if (!keepOffscreenOpen && this.activeEngine !== 'kokoro' && !this.kokoroWarm) {
       await this.closeOffscreen();
     }
 
@@ -348,7 +354,7 @@ export class Player {
   }
 
   onWordBoundarySchedule(
-    words: Array<{ charIndex: number; charLength: number }>,
+    words: Array<{ charIndex: number; charLength: number; atMs: number }>,
     durationMs: number,
     engine: EngineId,
   ): void {
@@ -362,13 +368,24 @@ export class Player {
     chrome.tabs.sendMessage(this.session.tabId, message).catch(() => undefined);
   }
 
-  onEngineStatus(engine: EngineId, status: 'loading' | 'ready'): void {
-    if (!this.session || engine !== this.activeEngine) return;
-    if (status === 'loading' && this.status === 'playing') {
-      this.setStatus('loading');
-    } else if (status === 'ready' && this.status === 'loading') {
-      this.setStatus('playing');
+  onEngineStatus(
+    engine: EngineId,
+    status: 'loading' | 'ready',
+    progress: number | null = null,
+  ): void {
+    this.modelProgress = status === 'loading' ? progress : null;
+    if (this.session && engine === this.activeEngine) {
+      if (status === 'loading' && this.status === 'playing') {
+        this.setStatus('loading');
+        return;
+      }
+      if (status === 'ready' && this.status === 'loading') {
+        this.setStatus('playing');
+        return;
+      }
     }
+    // Still emit so an idle popup can show voice-download progress.
+    this.emitState();
   }
 
   /** Refresh voice cache from the browser TTS service used for playback. */
@@ -411,6 +428,7 @@ export class Player {
   }
 
   private async preloadVoice(voiceId: string): Promise<void> {
+    if (voiceId.startsWith('kokoro:')) this.kokoroWarm = true;
     await this.sendToOffscreen({ type: 'PRELOAD_VOICE', voiceId });
   }
 
@@ -443,11 +461,11 @@ export class Player {
     const chunk = chunks[chunkIndex];
     if (!chunk) return;
 
-    // Send highlight + scroll to content script
-    this.sendHighlight(tabId, chunkIndex).catch(() => undefined);
-
     // Resolve voice
     const settings = await loadSettings();
+
+    // Send highlight + scroll to content script
+    this.sendHighlight(tabId, chunkIndex, settings.autoScroll).catch(() => undefined);
     if (
       this.cachedVoices.length === 0 ||
       (settings.voiceId && !this.cachedVoices.some(v => v.id === settings.voiceId))
@@ -491,6 +509,7 @@ export class Player {
     this.activeEngine = voiceId?.startsWith('kokoro:')
       ? 'kokoro'
       : 'speech-synthesis';
+    if (this.activeEngine === 'kokoro') this.kokoroWarm = true;
     this.chromeTtsEngine.stop();
 
     const msg: OffscreenMessage = {
@@ -545,12 +564,15 @@ export class Player {
     };
   }
 
-  private async sendHighlight(tabId: number, chunkIndex: number): Promise<void> {
-    const settings = await loadSettings();
+  private async sendHighlight(
+    tabId: number,
+    chunkIndex: number,
+    scroll: boolean,
+  ): Promise<void> {
     const msg: ContentScriptMessage = {
       type:       'HIGHLIGHT_CHUNK',
       chunkIndex,
-      scroll:     settings.autoScroll,
+      scroll,
     };
     await chrome.tabs
       .sendMessage(tabId, msg)
@@ -644,6 +666,7 @@ export class Player {
     if (!this.offscreenReady) return;
     await chrome.offscreen.closeDocument().catch(() => undefined);
     this.offscreenReady = false;
+    this.kokoroWarm = false;
   }
 
   private async sendToOffscreen(msg: OffscreenMessage): Promise<void> {
@@ -686,7 +709,7 @@ export class Player {
     ++this.playbackGeneration;
     this.chromeTtsEngine.stop();
     this.sendToOffscreen({ type: 'STOP' }).catch(() => undefined);
-    this.closeOffscreen().catch(() => undefined);
+    if (!this.kokoroWarm) this.closeOffscreen().catch(() => undefined);
     this.status       = 'error';
     this.errorMessage = message;
     this.session      = null;

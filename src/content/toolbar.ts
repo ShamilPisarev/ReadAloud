@@ -235,6 +235,7 @@ export class ReadingToolbar {
     chunkIndex: 0,
     totalChunks: 0,
     errorMessage: null,
+    modelProgress: null,
     voices: [],
   };
   private settings: ReadAloudSettings | null = null;

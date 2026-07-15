@@ -267,7 +267,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (msg.type === 'ENGINE_STATUS') {
-      player.onEngineStatus(msg.engine, msg.status);
+      player.onEngineStatus(msg.engine, msg.status, msg.progress ?? null);
       sendResponse({ ok: true });
       return false;
     }

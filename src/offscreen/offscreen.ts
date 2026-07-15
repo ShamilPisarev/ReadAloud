@@ -42,11 +42,12 @@ let speakGeneration = 0;
 // which will relay them to the content script for real-time word highlighting.
 wireWordBoundaries(speechSynthesisEngine);
 wireWordBoundaries(kokoroEngine);
-kokoroEngine.onModelStatus = status => {
+kokoroEngine.onModelStatus = (status, progress) => {
   chrome.runtime.sendMessage({
     type: 'ENGINE_STATUS',
     engine: 'kokoro',
     status,
+    progress: progress ?? null,
   }).catch(() => undefined);
 };
 kokoroEngine.onWordBoundarySchedule = (words, durationMs) => {
@@ -140,6 +141,15 @@ chrome.runtime.onMessage.addListener(
         sendResponse({ ok: true });
         return false;
       }
+
+      case 'BENCH_GENERATE':
+        kokoroEngine.benchGenerate(msg.text, msg.voiceId, msg.modelConfig)
+          .then(stats => sendResponse({ ok: true, stats }))
+          .catch((err: unknown) => sendResponse({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }));
+        return true;
 
       case 'PRELOAD_VOICE':
         if (!msg.voiceId.startsWith('kokoro:')) {

@@ -6,6 +6,11 @@ import { rankVoices, type UnscoredVoice } from './voice-ranking';
 const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
 const KOKORO_MAX_RATE = 2;
 
+export type ModelConfig = {
+  device: 'webgpu' | 'wasm';
+  dtype: 'fp32' | 'fp16' | 'q8';
+};
+
 type KokoroVoiceDefinition = {
   id: string;
   name: string;
@@ -59,10 +64,10 @@ export class KokoroEngine implements SpeechEngine {
 
   onWordBoundary?: (charIndex: number, charLength: number) => void;
   onWordBoundarySchedule?: (
-    words: Array<{ charIndex: number; charLength: number }>,
+    words: Array<{ charIndex: number; charLength: number; atMs: number }>,
     durationMs: number,
   ) => void;
-  onModelStatus?: (status: 'loading' | 'ready') => void;
+  onModelStatus?: (status: 'loading' | 'ready', progress?: number | null) => void;
 
   private modelPromise: Promise<KokoroTTS> | null = null;
   private modelReady = false;
@@ -78,6 +83,10 @@ export class KokoroEngine implements SpeechEngine {
   private currentCharIndex = 0;
   private currentPrefetchText = '';
   private preparedAudio: PreparedAudio | null = null;
+  private downloadProgress = new Map<string, { loaded: number; total: number }>();
+  private lastReportedPercent = -1;
+  /** Benchmark-only override for the model config (see benchGenerate). */
+  private forcedConfig: ModelConfig | null = null;
 
   getVoices(): Promise<Voice[]> {
     const voices: UnscoredVoice[] = KOKORO_VOICES.map(voice => ({
@@ -108,6 +117,56 @@ export class KokoroEngine implements SpeechEngine {
   /** Warm the model while the user is choosing settings, before playback. */
   async preload(): Promise<void> {
     await this.getModel();
+  }
+
+  /**
+   * Dev-only benchmark probe: synthesise without playback and report model
+   * init time, generation time, and audio-integrity statistics so tooling
+   * can compare dtypes and detect corrupted output.
+   */
+  async benchGenerate(
+    text: string,
+    voiceId?: string,
+    modelConfig?: ModelConfig,
+  ): Promise<Record<string, number>> {
+    if (modelConfig) {
+      this.forcedConfig = modelConfig;
+      this.modelPromise = null;
+      this.modelReady = false;
+    }
+    const initStart = performance.now();
+    const model = await this.getModel();
+    const initMs = performance.now() - initStart;
+
+    const generateStart = performance.now();
+    const audio = await model.generate(text, {
+      voice: this.resolveVoice(voiceId),
+      speed: 1,
+    });
+    const generateMs = performance.now() - generateStart;
+
+    const samples = audio.audio;
+    let sumSquares = 0;
+    let peak = 0;
+    let nanCount = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const value = samples[i] ?? 0;
+      if (Number.isNaN(value)) {
+        nanCount++;
+        continue;
+      }
+      sumSquares += value * value;
+      if (Math.abs(value) > peak) peak = Math.abs(value);
+    }
+
+    return {
+      initMs: Math.round(initMs),
+      generateMs: Math.round(generateMs),
+      audioSeconds: samples.length / audio.sampling_rate,
+      rms: Math.sqrt(sumSquares / Math.max(1, samples.length)),
+      peak,
+      nanCount,
+    };
   }
 
   /** Regenerate the unread text at the new speed so the voice keeps its pitch. */
@@ -225,7 +284,7 @@ export class KokoroEngine implements SpeechEngine {
 
   private async getModel(): Promise<KokoroTTS> {
     if (!this.modelPromise) {
-      this.onModelStatus?.('loading');
+      this.onModelStatus?.('loading', null);
       this.modelPromise = this.loadBestModel().then(model => {
         this.modelReady = true;
         this.onModelStatus?.('ready');
@@ -233,34 +292,73 @@ export class KokoroEngine implements SpeechEngine {
       }).catch((error: unknown) => {
         this.modelPromise = null;
         this.modelReady = false;
+        this.onModelStatus?.('ready');
         throw error;
       });
     } else if (!this.modelReady) {
-      this.onModelStatus?.('loading');
+      this.onModelStatus?.('loading', null);
     }
     return this.modelPromise;
   }
 
   private async loadBestModel(): Promise<KokoroTTS> {
     // Both WebGPU and WASM use ONNX Runtime's local JSEP module.
+    // NOTE: offscreen documents only get the chrome.runtime API — no
+    // chrome.storage — so the chosen config cannot be persisted here.
     kokoroEnv.wasmPaths = chrome.runtime.getURL('dist/wasm/');
-    if (await supportsFastWebGpu()) {
+
+    const candidates = this.forcedConfig
+      ? [this.forcedConfig]
+      : await defaultModelCandidates();
+
+    let lastError: unknown = new Error('No Kokoro model configuration available.');
+    for (const config of candidates) {
       try {
         return await KokoroTTS.from_pretrained(MODEL_ID, {
-          // kokoro-js recommends FP32 for WebGPU. Q4/F16 is faster to load,
-          // but can produce corrupted, metallic audio on some integrated GPUs.
-          dtype: 'fp32',
-          device: 'webgpu',
+          dtype: config.dtype,
+          device: config.device,
+          progress_callback: event => this.reportDownloadProgress(event),
         });
       } catch (error) {
-        console.warn('Kokoro WebGPU initialization failed; using WASM.', error);
+        lastError = error;
+        console.warn(
+          `Kokoro ${config.device}/${config.dtype} initialization failed.`,
+          error,
+        );
       }
     }
+    throw lastError;
+  }
 
-    return KokoroTTS.from_pretrained(MODEL_ID, {
-      dtype: 'q8',
-      device: 'wasm',
+  /**
+   * Aggregate transformers.js per-file download events into one percentage.
+   * Only real network downloads emit 'progress'; cache hits skip straight to
+   * 'done', so a warm start shows no misleading progress numbers.
+   */
+  private reportDownloadProgress(event: unknown): void {
+    const info = event as {
+      status?: string;
+      file?: string;
+      loaded?: number;
+      total?: number;
+    };
+    if (info.status !== 'progress' || !info.file || !info.total) return;
+
+    this.downloadProgress.set(info.file, {
+      loaded: info.loaded ?? 0,
+      total: info.total,
     });
+    let loaded = 0;
+    let total = 0;
+    for (const entry of this.downloadProgress.values()) {
+      loaded += entry.loaded;
+      total += entry.total;
+    }
+    const percent = Math.min(99, Math.floor((loaded / total) * 100));
+    if (percent !== this.lastReportedPercent) {
+      this.lastReportedPercent = percent;
+      this.onModelStatus?.('loading', percent);
+    }
   }
 
   private async playAudio(
@@ -277,7 +375,7 @@ export class KokoroEngine implements SpeechEngine {
     if (generation !== this.generation) return;
 
     const buffer = context.createBuffer(1, audio.audio.length, audio.sampling_rate);
-    buffer.copyToChannel(Float32Array.from(audio.audio), 0);
+    buffer.copyToChannel(audio.audio as Float32Array<ArrayBuffer>, 0);
 
     const source = context.createBufferSource();
     const gain = context.createGain();
@@ -286,13 +384,12 @@ export class KokoroEngine implements SpeechEngine {
     source.connect(gain);
     gain.connect(context.destination);
     this.source = source;
-    const schedule = collectWordBoundaries(text, baseOffset);
+    const schedule = computeWordSchedule(text, baseOffset, buffer.duration * 1000);
     this.onWordBoundarySchedule?.(schedule, buffer.duration * 1000);
     this.startBoundaryTimer(
-      text,
+      schedule,
       buffer.duration,
       context,
-      baseOffset,
       !this.onWordBoundarySchedule,
     );
 
@@ -311,33 +408,29 @@ export class KokoroEngine implements SpeechEngine {
   }
 
   private startBoundaryTimer(
-    text: string,
+    schedule: Array<{ charIndex: number; charLength: number; atMs: number }>,
     durationSeconds: number,
     context: AudioContext,
-    baseOffset: number,
     emitBoundaries: boolean,
   ): void {
     this.clearBoundaryTimer();
-    const words: Array<{ start: number; length: number }> = [];
-    const regex = /\S+/g;
-    let match: RegExpExecArray | null;
-    while ((match = regex.exec(text)) !== null) {
-      words.push({ start: match.index, length: match[0].length });
-    }
-    if (words.length === 0 || durationSeconds <= 0) return;
+    if (schedule.length === 0 || durationSeconds <= 0) return;
 
     const startedAt = context.currentTime;
     let lastIndex = -1;
     const update = (): void => {
-      const progress = Math.min(0.999, (context.currentTime - startedAt) / durationSeconds);
-      const index = Math.min(words.length - 1, Math.floor(progress * words.length));
+      const elapsedMs = (context.currentTime - startedAt) * 1000;
+      let index = Math.max(0, lastIndex);
+      while (index + 1 < schedule.length && schedule[index + 1]!.atMs <= elapsedMs) {
+        index++;
+      }
       if (index === lastIndex) return;
       lastIndex = index;
-      const word = words[index];
+      const word = schedule[index];
       if (word) {
-        this.currentCharIndex = baseOffset + word.start;
+        this.currentCharIndex = word.charIndex;
         if (emitBoundaries) {
-          this.onWordBoundary?.(baseOffset + word.start, word.length);
+          this.onWordBoundary?.(word.charIndex, word.charLength);
         }
       }
     };
@@ -379,10 +472,16 @@ function audioKey(
   return `${voice}\u0000${rate}\u0000${text}`;
 }
 
-function collectWordBoundaries(
+/**
+ * Estimate when each word is spoken by weighting words by their length
+ * (plus one gap character), so long words hold the highlight longer than
+ * short ones instead of every word getting an equal share of the clip.
+ */
+function computeWordSchedule(
   text: string,
   baseOffset: number,
-): Array<{ charIndex: number; charLength: number }> {
+  durationMs: number,
+): Array<{ charIndex: number; charLength: number; atMs: number }> {
   const words: Array<{ charIndex: number; charLength: number }> = [];
   const regex = /\S+/g;
   let match: RegExpExecArray | null;
@@ -392,7 +491,30 @@ function collectWordBoundaries(
       charLength: match[0].length,
     });
   }
-  return words;
+
+  const totalWeight = words.reduce((sum, word) => sum + word.charLength + 1, 0);
+  let consumedWeight = 0;
+  return words.map(word => {
+    const atMs = totalWeight > 0
+      ? (consumedWeight / totalWeight) * durationMs
+      : 0;
+    consumedWeight += word.charLength + 1;
+    return { ...word, atMs };
+  });
+}
+
+async function defaultModelCandidates(): Promise<ModelConfig[]> {
+  // FP16 would halve the download, but on real hardware it produces metallic
+  // audio that decays to silence after a few sentences — while waveform
+  // statistics (RMS/peak/NaN) still look identical to FP32, so it cannot be
+  // detected automatically. WebGPU must stay on FP32.
+  if (await supportsFastWebGpu()) {
+    return [
+      { device: 'webgpu', dtype: 'fp32' },
+      { device: 'wasm',   dtype: 'q8'   },
+    ];
+  }
+  return [{ device: 'wasm', dtype: 'q8' }];
 }
 
 type WebGpuNavigator = Navigator & {

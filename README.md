@@ -11,7 +11,7 @@ A lightweight browser extension for listening to web pages with natural voices, 
 - Pause, resume, and move between sections
 - Keep Kokoro speech local after its one-time model download
 
-Kokoro runs in the browser through WebAssembly. The model is downloaded from Hugging Face the first time you select a Kokoro voice, then stored in the browser cache. Selecting a Kokoro voice also warms the model in the background so playback starts faster.
+Kokoro runs in the browser through WebGPU when the GPU supports it, falling back to WebAssembly. The model is downloaded from Hugging Face the first time you select a Kokoro voice — the popup shows download progress — then stored in the browser cache. Selecting a Kokoro voice also warms the model in the background so playback starts faster.
 
 ## Install locally
 

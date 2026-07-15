@@ -169,8 +169,11 @@ export function createChunks(text: string): Chunk[] {
       continue;
     }
 
+    // Keep the first chunk to a single sentence so local engines (Kokoro)
+    // synthesise it quickly and speech starts sooner; later chunks merge
+    // sentences up to MAX_CHUNK_CHARS as before.
     const mergedLength = span.end - current.start;
-    if (mergedLength <= MAX_CHUNK_CHARS) {
+    if (chunks.length > 0 && mergedLength <= MAX_CHUNK_CHARS) {
       current.end = span.end;
       continue;
     }

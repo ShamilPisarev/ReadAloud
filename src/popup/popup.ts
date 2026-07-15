@@ -49,11 +49,12 @@ const segBtns        = Array.from(document.querySelectorAll<HTMLButtonElement>('
 
 let settings: ReadAloudSettings;
 let playerState: PlayerStatePayload = {
-  status:       'idle',
-  chunkIndex:   0,
-  totalChunks:  0,
-  errorMessage: null,
-  voices:       [],
+  status:        'idle',
+  chunkIndex:    0,
+  totalChunks:   0,
+  errorMessage:  null,
+  modelProgress: null,
+  voices:        [],
 };
 const popupPort = chrome.runtime.connect({ name: 'read-aloud-popup' });
 
@@ -351,10 +352,13 @@ function applyPlayerState(state: PlayerStatePayload): void {
   playerState = state;
   clearError();
 
-  // 1. Status badge
+  // 1. Status badge — show voice-model download progress when one is running
   const { status } = state;
-  statusBadge.textContent = STATUS_LABEL[status];
-  statusBadge.className   = `badge badge--${status}`;
+  const downloading = state.modelProgress !== null && status !== 'error';
+  statusBadge.textContent = downloading
+    ? `Downloading voice ${state.modelProgress}%`
+    : STATUS_LABEL[status];
+  statusBadge.className = `badge badge--${downloading ? 'loading' : status}`;
 
   // 2. Transport buttons
   const playing = status === 'playing';

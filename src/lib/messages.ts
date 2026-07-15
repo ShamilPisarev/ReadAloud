@@ -33,7 +33,8 @@ export interface HighlightWordMessage {
 
 export interface HighlightWordScheduleMessage {
   type: 'HIGHLIGHT_WORD_SCHEDULE';
-  words: Array<{ charIndex: number; charLength: number }>;
+  /** `atMs` — when the word starts, relative to the start of the clip. */
+  words: Array<{ charIndex: number; charLength: number; atMs: number }>;
   durationMs: number;
 }
 
@@ -107,6 +108,18 @@ export interface SetRateMessage { type: 'SET_RATE'; rate: number }
 export interface PreloadVoiceMessage { type: 'PRELOAD_VOICE'; voiceId: string }
 
 /**
+ * Dev-only benchmark probe (used by .tools/benchmark-*.mjs via CDP):
+ * synthesise `text` without playing it and return timing + audio stats.
+ */
+export interface BenchGenerateMessage {
+  type: 'BENCH_GENERATE';
+  text: string;
+  voiceId?: string;
+  /** Force a specific model config (bypasses the default candidate order). */
+  modelConfig?: { device: 'webgpu' | 'wasm'; dtype: 'fp32' | 'fp16' | 'q8' };
+}
+
+/**
  * Background asks offscreen to return the available SpeechSynthesis voices.
  * The offscreen responds with `{ ok: true; voices: Array<...> }`.
  */
@@ -120,6 +133,7 @@ export type OffscreenMessage =
   | StopMessage
   | SetRateMessage
   | PreloadVoiceMessage
+  | BenchGenerateMessage
   | GetVoicesRequestMessage;
 
 // ---------------------------------------------------------------------------
@@ -175,6 +189,8 @@ export interface PlayerStatePayload {
   chunkIndex:   number;
   totalChunks:  number;
   errorMessage: string | null;
+  /** Voice model download progress 0–99; null when no download is running. */
+  modelProgress: number | null;
   /** Serialisable voice list for the popup's dropdown. */
   voices: Array<{ id: string; name: string; lang: string; local: boolean }>;
 }
@@ -214,7 +230,7 @@ export interface WordBoundaryMessage {
 
 export interface WordBoundaryScheduleMessage {
   type: 'WORD_BOUNDARY_SCHEDULE';
-  words: Array<{ charIndex: number; charLength: number }>;
+  words: Array<{ charIndex: number; charLength: number; atMs: number }>;
   durationMs: number;
   engine: EngineId;
 }
@@ -223,6 +239,8 @@ export interface EngineStatusMessage {
   type: 'ENGINE_STATUS';
   engine: EngineId;
   status: 'loading' | 'ready';
+  /** Model download progress 0–99, or null when unknown / not downloading. */
+  progress?: number | null;
 }
 
 /** Offscreen asks background to retrieve voices (chrome.tts) on its behalf. */

@@ -8,7 +8,7 @@
 //   file per entry point, so the output has zero external imports.
 
 import * as esbuild from 'esbuild';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 
 const watch = process.argv.includes('--watch');
 
@@ -41,10 +41,17 @@ const config = {
   format:    'esm',  // ES modules required for service_worker type:module
   target:    ['chrome116'],
   platform:  'browser',
-  sourcemap: true,
+  // Release builds are minified without sourcemaps: the multi-MB offscreen
+  // bundle must be parsed before the Kokoro model can even start loading,
+  // and stale maps only bloat the unpacked extension.
+  minify:    !watch,
+  sourcemap: watch,
   logLevel:  'info',
 };
 
+// Remove stale artifacts (renamed entry points, old sourcemaps) so dist only
+// contains what this build produces.
+await rm('dist', { recursive: true, force: true });
 await copyRuntimeAssets();
 
 if (watch) {

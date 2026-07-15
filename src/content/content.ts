@@ -41,6 +41,7 @@ let playerState: PlayerStatePayload = {
   chunkIndex: 0,
   totalChunks: 0,
   errorMessage: null,
+  modelProgress: null,
   voices: [],
 };
 let popupVisible = false;
@@ -144,7 +145,7 @@ chrome.runtime.onMessage.addListener(
 );
 
 function startWordSchedule(
-  words: Array<{ charIndex: number; charLength: number }>,
+  words: Array<{ charIndex: number; charLength: number; atMs: number }>,
   durationMs: number,
 ): void {
   clearWordSchedule();
@@ -158,8 +159,11 @@ function startWordSchedule(
     if (playerState.status === 'playing') elapsedMs += now - lastTickAt;
     lastTickAt = now;
 
-    const progress = Math.min(0.999, elapsedMs / durationMs);
-    const index = Math.min(words.length - 1, Math.floor(progress * words.length));
+    // Advance to the last word whose scheduled start has passed.
+    let index = Math.max(0, lastIndex);
+    while (index + 1 < words.length && (words[index + 1]?.atMs ?? 0) <= elapsedMs) {
+      index++;
+    }
     if (index !== lastIndex) {
       lastIndex = index;
       const word = words[index];
