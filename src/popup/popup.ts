@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings }      from '../lib/storage';
+import { loadSettings, saveSettings, loadApiKey, saveApiKey } from '../lib/storage';
 import type { ReadAloudSettings }           from '../lib/storage';
 import type {
   BackgroundMessage,
@@ -31,6 +31,8 @@ const progressBar    = $<HTMLDivElement>('progress-bar');
 const progressLabel  = $<HTMLSpanElement>('progress-label');
 const voiceSelect    = $<HTMLSelectElement>('voice-select');
 const kokoroSpeedNote = $<HTMLParagraphElement>('kokoro-speed-note');
+const openrouterKeyRow   = $<HTMLDivElement>('openrouter-key-row');
+const openrouterKeyInput = $<HTMLInputElement>('openrouter-key');
 const rangeRate      = $<HTMLInputElement>('range-rate');
 const rangePitch     = $<HTMLInputElement>('range-pitch');
 const rangeVolume    = $<HTMLInputElement>('range-volume');
@@ -64,6 +66,7 @@ const popupPort = chrome.runtime.connect({ name: 'read-aloud-popup' });
 
 async function init(): Promise<void> {
   settings = await loadSettings();
+  openrouterKeyInput.value = await loadApiKey().catch(() => '');
 
   // Set the enable/disable toggle from saved state
   chkEnabled.checked = settings.enabled;
@@ -248,6 +251,23 @@ function wireEvents(): void {
     persistSetting({ autoScroll: chkScroll.checked });
   });
 
+  // OpenRouter API key (debounced, stored in chrome.storage.local only)
+  const keyStatus = $<HTMLSpanElement>('openrouter-key-status');
+  let keySaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let keyStatusTimer: ReturnType<typeof setTimeout> | undefined;
+  openrouterKeyInput.addEventListener('input', () => {
+    clearTimeout(keySaveTimer);
+    keySaveTimer = setTimeout(() => {
+      saveApiKey(openrouterKeyInput.value)
+        .then(() => {
+          keyStatus.textContent = openrouterKeyInput.value.trim() ? 'Saved ✓' : '';
+          clearTimeout(keyStatusTimer);
+          keyStatusTimer = setTimeout(() => { keyStatus.textContent = ''; }, 2_500);
+        })
+        .catch(err => showError(String(err)));
+    }, 300);
+  });
+
   // Enable / disable toggle
   chkEnabled.addEventListener('change', () => {
     const enabled = chkEnabled.checked;
@@ -319,6 +339,10 @@ function applySettingsToUI(s: ReadAloudSettings): void {
 function updateKokoroSpeedNote(): void {
   const isKokoro = voiceSelect.value.startsWith('kokoro:');
   kokoroSpeedNote.classList.toggle('hidden', !isKokoro);
+  openrouterKeyRow.classList.toggle(
+    'hidden',
+    !voiceSelect.value.startsWith('openrouter:'),
+  );
   rangeRate.max = String(isKokoro ? KOKORO_MAX_RATE : BROWSER_MAX_RATE);
 
   if (isKokoro && parseFloat(rangeRate.value) > KOKORO_MAX_RATE) {
@@ -426,13 +450,16 @@ function populateVoices(
   // Classify each voice: "natural" quality voices get their own group at the top
   const NATURAL_RE = /natural|neural|online|enhanced|premium|wavenet|studio|multilingual|google|siri|\bhd\b/i;
 
-  const kokoro:   PlayerStatePayload['voices'] = [];
-  const natural:  PlayerStatePayload['voices'] = [];
-  const standard: PlayerStatePayload['voices'] = [];
+  const kokoro:     PlayerStatePayload['voices'] = [];
+  const openrouter: PlayerStatePayload['voices'] = [];
+  const natural:    PlayerStatePayload['voices'] = [];
+  const standard:   PlayerStatePayload['voices'] = [];
 
   for (const v of voices) {
     if (v.id.startsWith('kokoro:')) {
       kokoro.push(v);
+    } else if (v.id.startsWith('openrouter:')) {
+      openrouter.push(v);
     } else {
       (NATURAL_RE.test(v.name) ? natural : standard).push(v);
     }
@@ -451,6 +478,13 @@ function populateVoices(
     const grp = document.createElement('optgroup');
     grp.label = 'Kokoro local AI — downloads once';
     kokoro.forEach(v => grp.appendChild(makeOption(v)));
+    voiceSelect.appendChild(grp);
+  }
+
+  if (openrouter.length > 0) {
+    const grp = document.createElement('optgroup');
+    grp.label = 'Flux cloud AI — needs OpenRouter key';
+    openrouter.forEach(v => grp.appendChild(makeOption(v)));
     voiceSelect.appendChild(grp);
   }
 

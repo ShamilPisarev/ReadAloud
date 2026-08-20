@@ -1,5 +1,5 @@
 /** Which underlying platform provides the voice. */
-export type EngineId = 'chrome-tts' | 'speech-synthesis' | 'kokoro';
+export type EngineId = 'chrome-tts' | 'speech-synthesis' | 'kokoro' | 'openrouter';
 
 /**
  * Normalized voice entry shared across both engines.

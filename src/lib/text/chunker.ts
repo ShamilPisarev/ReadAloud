@@ -4,7 +4,11 @@ import type { Chunk } from './types';
 // Configuration
 // ---------------------------------------------------------------------------
 
-/** Hard maximum characters per chunk sent to TTS. */
+/**
+ * Default maximum characters per chunk sent to TTS. Callers may pass a larger
+ * limit — e.g. network engines batch more text per request to conserve
+ * rate-limited API quotas.
+ */
 const MAX_CHUNK_CHARS = 280;
 
 /**
@@ -132,7 +136,10 @@ function breakLongSpan(text: string, span: Span, maxChars: number): Span[] {
  * offsets into that string. Chunk text is always `text.slice(startOffset,
  * endOffset)`, which keeps word-boundary highlighting aligned with the DOM.
  */
-export function createChunks(text: string): Chunk[] {
+export function createChunks(
+  text: string,
+  maxChars: number = MAX_CHUNK_CHARS,
+): Chunk[] {
   const chunks: Chunk[] = [];
   const spans: Span[] = [];
   const paragraphRegex = /[^\n]+/g;
@@ -146,7 +153,7 @@ export function createChunks(text: string): Chunk[] {
     if (!paragraph) continue;
 
     for (const sentence of splitSentenceSpans(text, paragraph)) {
-      spans.push(...breakLongSpan(text, sentence, MAX_CHUNK_CHARS));
+      spans.push(...breakLongSpan(text, sentence, maxChars));
     }
   }
 
@@ -169,11 +176,11 @@ export function createChunks(text: string): Chunk[] {
       continue;
     }
 
-    // Keep the first chunk to a single sentence so local engines (Kokoro)
-    // synthesise it quickly and speech starts sooner; later chunks merge
-    // sentences up to MAX_CHUNK_CHARS as before.
+    // Keep the first chunk to a single sentence so the engine synthesises it
+    // quickly and speech starts sooner; later chunks merge sentences up to
+    // maxChars as before.
     const mergedLength = span.end - current.start;
-    if (chunks.length > 0 && mergedLength <= MAX_CHUNK_CHARS) {
+    if (chunks.length > 0 && mergedLength <= maxChars) {
       current.end = span.end;
       continue;
     }

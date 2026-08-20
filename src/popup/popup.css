@@ -268,6 +268,13 @@ body.extension-disabled .card {
   line-height: 1.4;
 }
 
+.key-status {
+  color: #18a058;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 6px;
+}
+
 /* ── Sliders ────────────────────────────────────────────────────────────── */
 .sliders { display: flex; flex-direction: column; gap: 6px; }
 

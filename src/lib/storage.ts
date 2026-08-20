@@ -32,6 +32,7 @@ const DEFAULTS: ReadAloudSettings = {
 };
 
 const STORAGE_KEY = 'readAloudSettings';
+const API_KEY_STORAGE_KEY = 'openRouterApiKey';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -43,6 +44,30 @@ export async function loadSettings(): Promise<ReadAloudSettings> {
     chrome.storage.sync.get(STORAGE_KEY, result => {
       const stored = (result[STORAGE_KEY] ?? {}) as Partial<ReadAloudSettings>;
       resolve({ ...DEFAULTS, ...stored });
+    });
+  });
+}
+
+/**
+ * OpenRouter API key — kept in `chrome.storage.local` (NOT sync) so the
+ * secret never leaves this machine via profile sync.
+ */
+export async function loadApiKey(): Promise<string> {
+  return new Promise(resolve => {
+    chrome.storage.local.get(API_KEY_STORAGE_KEY, result => {
+      resolve((result[API_KEY_STORAGE_KEY] as string | undefined) ?? '');
+    });
+  });
+}
+
+export async function saveApiKey(apiKey: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({ [API_KEY_STORAGE_KEY]: apiKey.trim() }, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
     });
   });
 }

@@ -17,7 +17,8 @@
   "host_permissions": [
     "https://huggingface.co/*",
     "https://*.huggingface.co/*",
-    "https://*.hf.co/*"
+    "https://*.hf.co/*",
+    "https://openrouter.ai/*"
   ],
 
   "content_security_policy": {

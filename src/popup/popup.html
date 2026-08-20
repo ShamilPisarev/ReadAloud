@@ -73,6 +73,25 @@
         Kokoro runs locally. For natural speech, use 1×–1.5× (maximum 2×).
       </p>
 
+      <div id="openrouter-key-row" class="hidden">
+        <label class="field-label" for="openrouter-key">OpenRouter API key
+          <span id="openrouter-key-status" class="key-status" aria-live="polite"></span>
+        </label>
+        <input
+          id="openrouter-key"
+          class="select"
+          type="password"
+          placeholder="Paste your key — it saves automatically"
+          autocomplete="off"
+          spellcheck="false"
+          aria-describedby="openrouter-key-note"
+        />
+        <p id="openrouter-key-note" class="settings-note">
+          Flux voices are synthesized by OpenRouter's free tier — create a key
+          at openrouter.ai/keys. The key is stored only on this device.
+        </p>
+      </div>
+
       <div class="sliders">
         <label class="slider-row">
           <span class="slider-label">Speed</span>

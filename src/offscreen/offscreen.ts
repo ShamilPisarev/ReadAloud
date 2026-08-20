@@ -11,6 +11,7 @@
 
 import { SpeechSynthesisEngine }      from '../lib/speech/speech-synthesis-engine';
 import { KokoroEngine }               from '../lib/speech/kokoro-engine';
+import { OpenRouterEngine }           from '../lib/speech/openrouter-engine';
 import type { EngineId, SpeechEngine, Voice } from '../lib/speech/types';
 import type { OffscreenMessage }       from '../lib/messages';
 import type {
@@ -29,6 +30,7 @@ type OffscreenEngine = SpeechEngine & {
 
 const speechSynthesisEngine = new SpeechSynthesisEngine(window.speechSynthesis);
 const kokoroEngine = new KokoroEngine();
+const openRouterEngine = new OpenRouterEngine();
 let activeEngine: OffscreenEngine = speechSynthesisEngine;
 
 /**
@@ -42,6 +44,7 @@ let speakGeneration = 0;
 // which will relay them to the content script for real-time word highlighting.
 wireWordBoundaries(speechSynthesisEngine);
 wireWordBoundaries(kokoroEngine);
+wireWordBoundaries(openRouterEngine);
 kokoroEngine.onModelStatus = (status, progress) => {
   chrome.runtime.sendMessage({
     type: 'ENGINE_STATUS',
@@ -75,6 +78,9 @@ chrome.runtime.onMessage.addListener(
         if (nextEngine !== activeEngine) {
           activeEngine.stop();
           activeEngine = nextEngine;
+        }
+        if (nextEngine === openRouterEngine) {
+          openRouterEngine.apiKey = msg.apiKey ?? '';
         }
         const gen = ++speakGeneration;
         const engineId = activeEngine.engineId;
@@ -119,6 +125,7 @@ chrome.runtime.onMessage.addListener(
         ++speakGeneration;
         speechSynthesisEngine.stop();
         kokoroEngine.stop();
+        openRouterEngine.stop();
         sendResponse({ ok: true });
         return false;
 
@@ -170,6 +177,7 @@ chrome.runtime.onMessage.addListener(
         Promise.all([
           speechSynthesisEngine.getVoices(),
           kokoroEngine.getVoices(),
+          openRouterEngine.getVoices(),
         ]).then((voiceGroups: Voice[][]) => {
           sendResponse({
             ok: true,
@@ -188,9 +196,9 @@ chrome.runtime.onMessage.addListener(
 // ---------------------------------------------------------------------------
 
 function resolveEngine(voiceId?: string): OffscreenEngine {
-  return voiceId?.startsWith('kokoro:')
-    ? kokoroEngine
-    : speechSynthesisEngine;
+  if (voiceId?.startsWith('kokoro:'))     return kokoroEngine;
+  if (voiceId?.startsWith('openrouter:')) return openRouterEngine;
+  return speechSynthesisEngine;
 }
 
 function wireWordBoundaries(

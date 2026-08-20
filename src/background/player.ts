@@ -10,7 +10,8 @@
  *    chrome.storage.session (tab id + chunk index).
  */
 
-import { loadSettings, saveSettings }  from '../lib/storage';
+import { loadSettings, saveSettings, loadApiKey } from '../lib/storage';
+import { OPENROUTER_CHUNK_CHARS }     from '../lib/speech/openrouter-engine';
 import { ChromeTtsEngine }            from '../lib/speech/chrome-tts-engine';
 import { pickBestVoice, rankVoices }  from '../lib/speech/voice-ranking';
 import type { EngineId, Voice }       from '../lib/speech/types';
@@ -121,15 +122,21 @@ export class Player {
       }
       // If still empty after loading, we continue without a specific voice Id;
       // the engine will use its default selection.
-      // 2. Resolve text + chunks
+      // 2. Resolve text + chunks. Cloud voices batch more text per chunk so
+      // each rate-limited API request carries more of the article.
+      const settings = await loadSettings();
+      const chunkChars = settings.voiceId.startsWith('openrouter:')
+        ? OPENROUTER_CHUNK_CHARS
+        : undefined;
+
       let chunks: Chunk[];
       let startIndex = 0;
 
       if (trigger === 'paste') {
         const { createChunks } = await import('../lib/text/chunker');
-        chunks = createChunks(pasteText);
+        chunks = createChunks(pasteText, chunkChars);
       } else {
-        const extracted = await this.extractFromTab(tabId, trigger);
+        const extracted = await this.extractFromTab(tabId, trigger, chunkChars);
         chunks     = extracted.chunks;
         startIndex = extracted.startIndex;
       }
@@ -225,7 +232,9 @@ export class Player {
       if (voiceId.startsWith('kokoro:')) {
         this.activeEngine = 'kokoro';
         await this.preloadVoice(voiceId).catch(() => undefined);
-      } else if (this.activeEngine === 'kokoro') {
+      } else if (voiceId.startsWith('openrouter:')) {
+        this.activeEngine = 'openrouter';
+      } else if (this.activeEngine === 'kokoro' || this.activeEngine === 'openrouter') {
         this.activeEngine = 'speech-synthesis';
         // Keep the offscreen document alive when a Kokoro model is warm in
         // it — closing would force a full model re-init on the next switch.
@@ -508,20 +517,25 @@ export class Player {
 
     this.activeEngine = voiceId?.startsWith('kokoro:')
       ? 'kokoro'
-      : 'speech-synthesis';
+      : voiceId?.startsWith('openrouter:')
+        ? 'openrouter'
+        : 'speech-synthesis';
     if (this.activeEngine === 'kokoro') this.kokoroWarm = true;
     this.chromeTtsEngine.stop();
+
+    // Both Kokoro (local synthesis) and OpenRouter (network fetch) benefit
+    // from preparing the next chunk while the current one plays.
+    const prefetches = this.activeEngine === 'kokoro' || this.activeEngine === 'openrouter';
 
     const msg: OffscreenMessage = {
       type:    'SPEAK_CHUNK',
       text:    chunk.text,
-      prefetchText: voiceId?.startsWith('kokoro:')
-        ? chunks[chunkIndex + 1]?.text
-        : undefined,
+      prefetchText: prefetches ? chunks[chunkIndex + 1]?.text : undefined,
       voiceId: voiceId ?? undefined,
       rate:    settings.rate,
       pitch:   settings.pitch,
       volume:  settings.volume,
+      apiKey:  this.activeEngine === 'openrouter' ? await loadApiKey() : undefined,
     };
 
     await this.sendToOffscreen(msg);
@@ -534,6 +548,7 @@ export class Player {
   private async extractFromTab(
     tabId: number,
     trigger: PlayTrigger,
+    chunkChars?: number,
   ): Promise<{ chunks: Chunk[]; startIndex: number }> {
     // Inject the content script if it hasn't loaded yet (e.g. right after install)
     await chrome.scripting
@@ -541,7 +556,11 @@ export class Player {
       .catch(() => undefined); // already injected — ignore error
 
     const fromSelectionStart = trigger === 'from-here';
-    const extractMsg: ContentScriptMessage = { type: 'EXTRACT_TEXT', fromSelectionStart };
+    const extractMsg: ContentScriptMessage = {
+      type: 'EXTRACT_TEXT',
+      fromSelectionStart,
+      chunkChars,
+    };
     const response = await chrome.tabs
       .sendMessage<ContentScriptMessage, ContentScriptResponse>(tabId, extractMsg)
       .catch((err: unknown) => ({
@@ -741,8 +760,11 @@ function resolveVoiceId(
     }
   }
   // Kokoro is an explicit opt-in because selecting it may trigger the first
-  // model download. Automatic mode must remain instant and lightweight.
-  const automaticVoices = voices.filter(voice => voice.engine !== 'kokoro');
+  // model download; OpenRouter because it needs an API key and network calls.
+  // Automatic mode must remain instant and lightweight.
+  const automaticVoices = voices.filter(
+    voice => voice.engine !== 'kokoro' && voice.engine !== 'openrouter',
+  );
   const best = pickBestVoice(automaticVoices, preferredLanguage);
   return best?.id ?? null;
 }

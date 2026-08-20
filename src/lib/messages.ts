@@ -14,6 +14,11 @@ export interface ExtractTextMessage {
    * can start mid-page ("read from here" feature).
    */
   fromSelectionStart?: boolean;
+  /**
+   * Maximum characters per chunk. Network engines request a larger size so
+   * each rate-limited API call carries more text; omitted = local default.
+   */
+  chunkChars?: number;
 }
 
 /** Tell the content script to highlight and optionally scroll to a chunk. */
@@ -95,6 +100,11 @@ export interface SpeakChunkMessage {
   pitch?: number;
   volume?: number;
   lang?: string;
+  /**
+   * OpenRouter API key for cloud voices. Passed with each chunk because the
+   * offscreen document has no chrome.storage access.
+   */
+  apiKey?: string;
 }
 
 export interface PauseMessage  { type: 'PAUSE'  }

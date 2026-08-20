@@ -107,7 +107,7 @@ chrome.runtime.onMessage.addListener(
 
     switch (csMsg.type) {
       case 'EXTRACT_TEXT':
-        handleExtract(sendResponse, csMsg.fromSelectionStart ?? false);
+        handleExtract(sendResponse, csMsg.fromSelectionStart ?? false, csMsg.chunkChars);
         return true; // keep the channel open for the async response
 
       case 'HIGHLIGHT_CHUNK':
@@ -349,6 +349,7 @@ function shouldAutoScroll(): boolean {
 function handleExtract(
   sendResponse: (r: ContentScriptResponse) => void,
   fromSelectionStart: boolean,
+  chunkChars?: number,
 ): void {
   try {
     // For "read from here": always extract the full page/article — never
@@ -358,7 +359,7 @@ function handleExtract(
       : extract();
 
     lastNodeMap = result.nodeMap;
-    lastChunks  = createChunks(result.text);
+    lastChunks  = createChunks(result.text, chunkChars);
 
     let startChunkIndex: number | undefined;
     if (fromSelectionStart) {
