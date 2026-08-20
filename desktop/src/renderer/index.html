@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://openrouter.ai; media-src blob:; img-src 'self' data:" />
+    <title>Read Aloud</title>
+    <link rel="stylesheet" href="renderer.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <span class="app-title">Read Aloud</span>
+      <span id="status-badge" class="badge badge--idle" aria-live="polite">Ready</span>
+    </header>
+
+    <section class="card" aria-label="Capture">
+      <div class="capture-row">
+        <button id="btn-capture-selection" class="capture-btn" type="button">
+          Read selection <kbd id="kbd-selection">Ctrl+Alt+R</kbd>
+        </button>
+        <button id="btn-capture-clipboard" class="capture-btn" type="button">
+          Read clipboard <kbd id="kbd-clipboard">Ctrl+Alt+C</kbd>
+        </button>
+        <button id="btn-capture-region" class="capture-btn" type="button">
+          Read screen area <kbd id="kbd-region">Ctrl+Alt+S</kbd>
+        </button>
+      </div>
+    </section>
+
+    <section class="card card--grow" aria-label="Text">
+      <div
+        id="text-view"
+        class="text-view"
+        contenteditable="plaintext-only"
+        spellcheck="false"
+        data-placeholder="Captured text appears here — or type / paste your own."
+      ></div>
+    </section>
+
+    <section class="card transport" aria-label="Playback controls">
+      <button id="btn-play" class="icon-btn icon-btn--primary" title="Play" aria-label="Play" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,3 19,12 5,21"/></svg>
+      </button>
+      <button id="btn-pause" class="icon-btn" title="Pause" aria-label="Pause" type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button id="btn-stop" class="icon-btn" title="Stop" aria-label="Stop" type="button" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16"/></svg>
+      </button>
+      <span id="progress-label" class="progress-label">—</span>
+    </section>
+
+    <section class="card" aria-label="Voice settings">
+      <label class="field-label" for="voice-select">Voice</label>
+      <select id="voice-select" class="select"></select>
+
+      <div id="openrouter-key-row" class="hidden">
+        <label class="field-label" for="openrouter-key">OpenRouter API key
+          <span id="openrouter-key-status" class="key-status" aria-live="polite"></span>
+        </label>
+        <input id="openrouter-key" class="select" type="password" placeholder="Paste your key — it saves automatically"
+               autocomplete="off" spellcheck="false" />
+        <p class="settings-note">
+          Flux voices are synthesized by OpenRouter's free tier —
+          <a id="key-link" href="#">create a key at openrouter.ai/keys</a>.
+          The key is stored only on this device.
+        </p>
+      </div>
+
+      <div class="sliders">
+        <label class="slider-row">
+          <span class="slider-label">Speed</span>
+          <input id="range-rate" class="range" type="range" min="0.5" max="3" step="0.05" value="1" />
+          <span id="val-rate" class="range-val">1.0×</span>
+        </label>
+        <label class="slider-row">
+          <span class="slider-label">Volume</span>
+          <input id="range-volume" class="range" type="range" min="0" max="1" step="0.05" value="1" />
+          <span id="val-volume" class="range-val">100%</span>
+        </label>
+      </div>
+    </section>
+
+    <div id="error-banner" class="error-banner hidden" role="alert" aria-live="assertive"></div>
+
+    <script src="../../dist/renderer/renderer.js"></script>
+  </body>
+</html>

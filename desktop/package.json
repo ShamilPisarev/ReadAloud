@@ -1,0 +1,43 @@
+{
+  "name": "readaloud-desktop",
+  "productName": "Read Aloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read text aloud from any application — selected text, clipboard, or any screen region via OCR.",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "smoke": "npm run build && electron . --smoke",
+    "package": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "tesseract.js": "^6.0.0"
+  },
+  "build": {
+    "appId": "dev.readaloud.desktop",
+    "files": [
+      "dist/**/*",
+      "src/renderer/*.html",
+      "src/renderer/*.css",
+      "src/overlay/*.html",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**"
+    ],
+    "win": { "target": "nsis", "icon": "assets/icon.png" },
+    "mac": { "target": "dmg", "icon": "assets/icon.png", "category": "public.app-category.utilities" }
+  }
+}
