@@ -1,6 +1,17 @@
 # Read Aloud
 
-A lightweight browser extension for listening to web pages with natural voices, reliable word highlighting, and precise playback controls — plus a desktop app (`desktop/`) that reads text aloud from **any** application on Windows and macOS.
+Listen to anything on your screen — with natural voices, live word highlighting, and playback you actually control.
+
+Two tools in one repo:
+
+- **A browser extension** for listening to web pages, selections, or pasted text — with local neural [Kokoro](https://github.com/hexgrad/kokoro) voices that run entirely in your browser.
+- **A desktop app** (`desktop/`) that reads text from **any** application on Windows and macOS: your selection, your clipboard, or any region of the screen via local OCR.
+
+<p align="center">
+  <img src="docs/desktop-player.png" width="480" alt="Read Aloud desktop player reading text with live word highlighting" />
+</p>
+
+Built out of a simple frustration: native text-to-speech is slow, robotic, and reads *everything* — I wanted to point at text anywhere on my screen, hear it in a good voice at my speed, and jump around by double-clicking. Now it exists.
 
 ## Features
 
@@ -14,6 +25,14 @@ A lightweight browser extension for listening to web pages with natural voices, 
 Kokoro runs in the browser through WebGPU when the GPU supports it, falling back to WebAssembly. The model is downloaded from Hugging Face the first time you select a Kokoro voice — the popup shows download progress — then stored in the browser cache. Selecting a Kokoro voice also warms the model in the background so playback starts faster.
 
 Flux voices are synthesized by Deepgram Flux through [OpenRouter](https://openrouter.ai)'s free `deepgram/flux-tts:free` endpoint. Select a Flux voice in the popup and paste an OpenRouter API key (create one at [openrouter.ai/keys](https://openrouter.ai/keys)) — the key is stored in `chrome.storage.local` and never syncs off the device. Free-tier requests are rate limited by OpenRouter.
+
+## Voices at a glance
+
+| Voice type | Where it runs | Cost | Notes |
+|---|---|---|---|
+| System voices | On your device | Free | macOS Premium/Enhanced voices (e.g. Ava) rank first automatically |
+| Kokoro (28 voices) | On your device (browser extension) | Free | Neural TTS via WebGPU/WASM, one-time model download |
+| Flux via OpenRouter (36 voices) | Cloud | Free tier | Bring your own [OpenRouter](https://openrouter.ai) key, opt-in |
 
 ## Install locally
 
@@ -78,3 +97,7 @@ Use `npm run package:mac` when the checkout lives in a cloud-synced folder (iClo
 ## Privacy
 
 Read Aloud does not require an account. Browser voices use the speech engines available on your system. Kokoro synthesis runs locally in the extension after its model files have been downloaded and cached. Flux voices send the text being read to OpenRouter for synthesis — they are opt-in and never auto-selected. The desktop app's OCR runs entirely locally.
+
+## License
+
+[MIT](LICENSE) — use it, fork it, ship it.
