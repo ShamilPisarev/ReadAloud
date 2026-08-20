@@ -46,8 +46,14 @@ export interface SpeakOptions {
 export interface SpeechEngine {
   readonly engineId: EngineId;
 
-  /** Discover all available voices, returned ranked best-first. */
-  getVoices(): Promise<Voice[]>;
+  /**
+   * Discover all available voices, returned ranked best-first.
+   *
+   * @param preferredLang BCP-47 tag to rank matching voices above the rest.
+   *                      Engines whose voice list is single-language may
+   *                      ignore it.
+   */
+  getVoices(preferredLang?: string): Promise<Voice[]>;
 
   /**
    * Speak `text`. Resolves when the utterance finishes (or is interrupted).

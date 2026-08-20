@@ -34,6 +34,37 @@ const QUALITY_KEYWORDS = [
   'hd',
 ] as const;
 
+/**
+ * Apple's "Novelty" voice tier — robot/joke/character voices that ship with
+ * macOS and are useless for reading prose. They score identically to real
+ * voices (same locale, same `localService`), so nothing in `computeScore` can
+ * separate them and they crowd out the handful of usable voices in a picker.
+ *
+ * Matched against the name with any locale suffix stripped, because the newer
+ * ones enumerate per region — "Grandma (English (United States))",
+ * "Grandma (English (United Kingdom))", and so on.
+ *
+ * These names are macOS-specific; on other platforms nothing matches and this
+ * is a no-op. "Ava (Premium)" strips to "Ava" and is deliberately absent.
+ */
+const NOVELTY_VOICE_NAMES: ReadonlySet<string> = new Set([
+  'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles', 'cellos',
+  'deranged', 'eddy', 'flo', 'fred', 'good news', 'grandma', 'grandpa',
+  'hysterical', 'jester', 'junior', 'kathy', 'organ', 'pipe organ',
+  'princess', 'ralph', 'reed', 'rocko', 'sandy', 'shelley', 'superstar',
+  'trinoids', 'whisper', 'wobble', 'zarvox',
+]);
+
+/**
+ * True for Apple's novelty voices, so callers can hide them from a picker.
+ * Purely advisory — `rankVoices` does not apply it, leaving existing
+ * consumers' ordering untouched.
+ */
+export function isNoveltyVoice(name: string): boolean {
+  const base = name.split(' (')[0]?.trim().toLowerCase() ?? '';
+  return NOVELTY_VOICE_NAMES.has(base);
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

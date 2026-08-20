@@ -43,7 +43,7 @@ export class SpeechSynthesisEngine implements SpeechEngine {
   // Voice discovery
   // -------------------------------------------------------------------------
 
-  getVoices(): Promise<Voice[]> {
+  getVoices(preferredLang?: string): Promise<Voice[]> {
     return new Promise<Voice[]>(resolve => {
       const convert = (raw: SpeechSynthesisVoice[]): Voice[] => {
         const unscored: UnscoredVoice[] = raw.map(v => ({
@@ -53,7 +53,7 @@ export class SpeechSynthesisEngine implements SpeechEngine {
           local:  v.localService,
           engine: 'speech-synthesis' as const,
         }));
-        return rankVoices(unscored);
+        return rankVoices(unscored, preferredLang);
       };
 
       // Chromium populates the list synchronously after the first call on

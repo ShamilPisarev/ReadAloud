@@ -6,7 +6,7 @@
 
 import { SpeechSynthesisEngine } from '../../../src/lib/speech/speech-synthesis-engine';
 import { OpenRouterEngine, OPENROUTER_CHUNK_CHARS } from '../../../src/lib/speech/openrouter-engine';
-import { pickBestVoice }         from '../../../src/lib/speech/voice-ranking';
+import { pickBestVoice, isNoveltyVoice } from '../../../src/lib/speech/voice-ranking';
 import { createChunks, chunkAtOffset } from '../../../src/lib/text/chunker';
 import type { Voice }            from '../../../src/lib/speech/types';
 import type { Chunk }            from '../../../src/lib/text/types';
@@ -326,15 +326,55 @@ function clearHighlights(): void {
 // Voices
 // ---------------------------------------------------------------------------
 
+/**
+ * The platform hands us every installed voice — ~180 on macOS, spanning 40+
+ * languages and Apple's novelty tier. Narrow that to what this user can
+ * actually use: their own languages, real voices only.
+ *
+ * Kept deliberately permissive at the edges — the currently selected voice
+ * always survives so a saved choice can never vanish from the picker, and an
+ * over-aggressive filter falls back to the full list rather than showing none.
+ * Cloud (Flux) voices are never filtered; they are a short, curated list.
+ */
+function shortlistSystemVoices(voices: Voice[]): Voice[] {
+  // navigator.languages is the system's ordered language preference,
+  // e.g. ['en-US', 'de-DE'] -> keep every en-* and de-* voice.
+  const wanted = new Set(
+    (navigator.languages.length > 0 ? navigator.languages : [navigator.language])
+      .map(tag => tag.toLowerCase().split('-')[0])
+      .filter((prefix): prefix is string => Boolean(prefix)),
+  );
+  // English is always offered regardless of system locale: the Flux and Kokoro
+  // voice sets are English-only, and a machine localised to another language
+  // would otherwise lose every English voice it has installed.
+  wanted.add('en');
+
+  const shortlist = voices.filter(voice => {
+    if (voice.id === settings.voiceId) return true;
+    if (isNoveltyVoice(voice.name)) return false;
+    const prefix = voice.lang.toLowerCase().split('-')[0];
+    return prefix !== undefined && wanted.has(prefix);
+  });
+
+  return shortlist.length > 0 ? shortlist : voices;
+}
+
 let allVoices: Voice[] = [];
 
 async function populateVoices(): Promise<void> {
   const [systemVoices, fluxVoices] = await Promise.all([
-    systemEngine.getVoices().catch(() => [] as Voice[]),
+    // Rank the platform's ~180 voices against this machine's locale, so the
+    // handful in the user's own language (and any Premium/Enhanced ones among
+    // them) sort above the 40+ other languages instead of being buried.
+    systemEngine.getVoices(navigator.language).catch(() => [] as Voice[]),
     openRouterEngine.getVoices(),
   ]);
   allVoices = [...systemVoices, ...fluxVoices];
-  console.log(`[voices] system: ${systemVoices.length}, flux: ${fluxVoices.length}`);
+  const shownSystemVoices = shortlistSystemVoices(systemVoices);
+  console.log(
+    `[voices] system: ${systemVoices.length} (${shownSystemVoices.length} shown),`
+    + ` flux: ${fluxVoices.length}`,
+  );
 
   voiceSelect.textContent = '';
   const addGroup = (label: string, voices: Voice[]): void => {
@@ -350,7 +390,7 @@ async function populateVoices(): Promise<void> {
     voiceSelect.appendChild(group);
   };
 
-  addGroup('System voices', systemVoices);
+  addGroup('System voices', shownSystemVoices);
   addGroup('Flux cloud AI — needs OpenRouter key', fluxVoices);
 
   const preferred = settings.voiceId || resolveVoiceId();
