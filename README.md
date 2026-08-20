@@ -62,9 +62,18 @@ npm install
 npm start          # build + run
 npm run smoke      # headless end-to-end playback test
 npm run package    # build installers via electron-builder
+npm run package:mac # macOS build, output outside the project tree
 ```
 
 On macOS the selection hotkey needs the Accessibility permission (System Settings → Privacy & Security) the first time, and screen capture needs the Screen Recording permission. The English OCR model (~2 MB) downloads on first use and is cached in the app's user-data directory.
+
+### macOS packaging notes
+
+Without a "Developer ID Application" certificate electron-builder skips signing, which leaves the bundle carrying the raw linker-signed Electron binary — resources unsealed and the identifier still `Electron`. macOS then has no stable identity to attach TCC grants to, so Accessibility and Screen Recording cannot be granted reliably. The `afterPack` hook (`desktop/build/after-pack.cjs`) ad-hoc signs the bundle under its real bundle id to fix that, and steps aside when a real certificate is configured.
+
+An ad-hoc identity is the bundle's cdhash, so **every rebuild is a new identity**: macOS forgets the granted permissions and they must be re-approved. Remove the stale "Read Aloud" entries in System Settings before re-adding the new build.
+
+Use `npm run package:mac` when the checkout lives in a cloud-synced folder (iCloud Drive, Dropbox, OneDrive). Those re-stamp `com.apple.FinderInfo` onto the bundle while it is being built, and `codesign` refuses to sign it (`resource fork, Finder information, or similar detritus not allowed`). That script writes the build to `$TMPDIR` instead, out of the sync provider's reach.
 
 ## Privacy
 

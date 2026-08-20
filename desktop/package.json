@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
     "smoke": "npm run build && electron . --smoke",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "package:mac": "npm run build && electron-builder --mac --config.directories.output=\"${TMPDIR:-/tmp/}readaloud-build\""
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -25,6 +26,7 @@
   },
   "build": {
     "appId": "dev.readaloud.desktop",
+    "afterPack": "build/after-pack.cjs",
     "files": [
       "dist/**/*",
       "src/renderer/*.html",
@@ -38,6 +40,13 @@
       "node_modules/tesseract.js-core/**"
     ],
     "win": { "target": "nsis", "icon": "assets/icon.png" },
-    "mac": { "target": "dmg", "icon": "assets/icon.png", "category": "public.app-category.utilities" }
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Read Aloud sends a copy keystroke to the frontmost app so it can read your current selection aloud."
+      }
+    }
   }
 }
